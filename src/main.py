@@ -5,12 +5,15 @@ from urllib.parse import urljoin
 import requests_cache
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+from collections import Counter
 
 from configs import configure_argument_parser, configure_logging
 from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL, EXPECTED_STATUS
 from outputs import control_output
 from utils import get_response, find_tag
-from collections import Counter
+from utils import (
+    collect_pep_links, get_actual_status, print_mismatches, build_status_table
+)
 
 
 def whats_new(session):
@@ -81,7 +84,7 @@ def download(session):
     soup = BeautifulSoup(response.text, features='lxml')
     main_tag = soup.find('div', {'role': 'main'})
     table_tag = main_tag.find('table', {'class': 'docutils'})
-    html_a4_tag =table_tag.find('a', {'href': re.compile(r'.+html.*\.zip$')})
+    html_a4_tag = table_tag.find('a', {'href': re.compile(r'.+html.*\.zip$')})
     html_a4_link = html_a4_tag['href']
     archive_url = urljoin(downloads_url, html_a4_link)
     filename = archive_url.split('/')[-1]
@@ -100,45 +103,7 @@ def pep(session):
     if response is None:
         return
     soup = BeautifulSoup(response.text, 'lxml')
-    tables = soup.find_all('table', class_=re.compile('pep-zero-table'))
-    if not tables:
-        logging.error('Не найдены таблицы со списком PEP')
-        return
-    pep_links = []
-    seen_numbers = set()
-    for table in tables:
-        rows = table.find_all('tr')
-        for row in rows:
-            cells = row.find_all('td')
-            if len(cells) < 2:
-                continue
-            number_cell = cells[1]
-            link = number_cell.find('a')
-            if not link:
-                continue
-            href = link.get('href', '')
-            if not href:
-                continue
-            pep_num = link.get_text(strip=True)
-            if not pep_num.isdigit() or pep_num == '0':
-                continue
-            if pep_num in seen_numbers:
-                continue
-            seen_numbers.add(pep_num)
-            pep_url = urljoin(PEP_URL, href)
-            status_cell = cells[0]
-            status_text = status_cell.get_text(strip=True)
-            expected_status_letter = ''
-            if len(status_text) > 1:
-                expected_status_letter = status_text[1:]
-            expected_status = EXPECTED_STATUS.get(
-                expected_status_letter, ('Unknown',)
-            )[0]
-            pep_links.append({
-                'number': pep_num,
-                'url': pep_url,
-                'expected_status': expected_status
-            })
+    pep_links = collect_pep_links(soup)
     logging.info(f'Найдено {len(pep_links)} PEP для обработки')
     if not pep_links:
         logging.error('Не найдено ни одного PEP')
@@ -152,22 +117,7 @@ def pep(session):
                 status_counter['Ошибка загрузки'] += 1
                 continue
             pep_soup = BeautifulSoup(response_pep.text, 'lxml')
-            actual_status = 'Unknown'
-            for dt in pep_soup.find_all('dt'):
-                dt_text = dt.get_text(strip=True)
-                if dt_text == 'Status' or dt_text == 'Status:':
-                    dd = dt.find_next_sibling('dd')
-                    if dd:
-                        actual_status = dd.get_text(strip=True)
-                        break
-            if actual_status == 'Unknown':
-                for th in pep_soup.find_all('th'):
-                    th_text = th.get_text(strip=True)
-                    if th_text == 'Status' or th_text == 'Status:':
-                        td = th.find_next_sibling('td')
-                        if td:
-                            actual_status = td.get_text(strip=True)
-                            break
+            actual_status = get_actual_status(pep_soup)
             status_counter[actual_status] += 1
             if actual_status != pep_data['expected_status']:
                 mismatches.append({
@@ -178,17 +128,8 @@ def pep(session):
         except Exception as e:
             logging.error(f'Ошибка PEP {pep_data["number"]}: {e}')
             status_counter['Error'] += 1
-    if mismatches:
-        print('\nНесовпадающие статусы:')
-        for mismatch in mismatches:
-            print(mismatch['url'])
-            print(f'Статус в карточке: {mismatch["actual"]}')
-            print(f'Ожидаемые статусы: [{mismatch["expected"]}]\n')
-    total_count = sum(status_counter.values())
-    results = [('Статус', 'Количество')]
-    for status, count in sorted(status_counter.items()):
-        results.append((status, count))
-    results.append(('Total', total_count))
+    print_mismatches(mismatches)
+    results = build_status_table(status_counter)
 
     return results
 
