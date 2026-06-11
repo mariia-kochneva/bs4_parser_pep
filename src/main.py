@@ -3,25 +3,22 @@ import logging
 from urllib.parse import urljoin
 
 import requests_cache
-from bs4 import BeautifulSoup
 from tqdm import tqdm
 from collections import Counter
 
 from configs import configure_argument_parser, configure_logging
 from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL
 from outputs import control_output
-from utils import get_response, find_tag
-from utils import (
-    collect_pep_links, get_actual_status, print_mismatches, build_status_table
-)
+from utils import get_soup, find_tag, collect_pep_links, get_actual_status
+from utils import print_mismatches, build_status_table
+from exceptions import ParserNotFoundVersionException
 
 
 def whats_new(session):
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
-    response = get_response(session, whats_new_url)
-    if response is None:
+    soup = get_soup(session, whats_new_url)
+    if soup is None:
         return
-    soup = BeautifulSoup(response.text, features='lxml')
     main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
     div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
     sections_by_python = div_with_ul.find_all(
@@ -32,10 +29,9 @@ def whats_new(session):
     for section in tqdm(sections_by_python):
         version_a_tag = section.find('a')
         version_link = urljoin(whats_new_url, version_a_tag['href'])
-        response = get_response(session, version_link)
-        if response is None:
+        soup = get_soup(session, version_link)
+        if soup is None:
             continue
-        soup = BeautifulSoup(response.text, 'lxml')
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         dl_text = dl.text.replace('\n', ' ')
@@ -47,19 +43,20 @@ def whats_new(session):
 
 
 def latest_versions(session):
-    response = get_response(session, MAIN_DOC_URL)
-    if response is None:
+    soup = get_soup(session, MAIN_DOC_URL)
+    if soup is None:
         return
-    soup = BeautifulSoup(response.text, 'lxml')
     sidebar = soup.find('div', {'class': 'sphinxsidebarwrapper'})
     ul_tags = sidebar.find_all('ul')
+    a_tags = None
     for ul in ul_tags:
         if 'All versions' in ul.text:
             a_tags = ul.find_all('a')
             break
-    else:
-        raise Exception('Не найден список c версиями Python')
-
+    if a_tags is None:
+        raise ParserNotFoundVersionException(
+            'Не найден список c версиями Python'
+        )
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
     for a_tag in a_tags:
@@ -69,19 +66,16 @@ def latest_versions(session):
             version, status = text_match.groups()
         else:
             version, status = a_tag.text, ''
-        results.append(
-            (link, version, status)
-        )
+        results.append((link, version, status))
 
     return results
 
 
 def download(session):
     downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
-    response = get_response(session, downloads_url)
-    if response is None:
+    soup = get_soup(session, downloads_url)
+    if soup is None:
         return
-    soup = BeautifulSoup(response.text, features='lxml')
     main_tag = soup.find('div', {'role': 'main'})
     table_tag = main_tag.find('table', {'class': 'docutils'})
     html_a4_tag = table_tag.find('a', {'href': re.compile(r'.+html.*\.zip$')})
@@ -97,12 +91,26 @@ def download(session):
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
+def process_pep(pep_data, session):
+    pep_soup = get_soup(session, pep_data['url'])
+    if pep_soup is None:
+        return 'Ошибка загрузки', None
+    actual_status = get_actual_status(pep_soup)
+    mismatch = None
+    if actual_status != pep_data['expected_status']:
+        mismatch = {
+            'url': pep_data['url'],
+            'actual': actual_status,
+            'expected': pep_data['expected_status']
+        }
+    return actual_status, mismatch
+
+
 def pep(session):
     logging.info('Начинаем парсинг PEP')
-    response = get_response(session, PEP_URL)
-    if response is None:
+    soup = get_soup(session, PEP_URL)
+    if soup is None:
         return
-    soup = BeautifulSoup(response.text, 'lxml')
     pep_links = collect_pep_links(soup)
     logging.info(f'Найдено {len(pep_links)} PEP для обработки')
     if not pep_links:
@@ -111,26 +119,12 @@ def pep(session):
     status_counter = Counter()
     mismatches = []
     for pep_data in tqdm(pep_links, desc='Обработка PEP'):
-        try:
-            response_pep = get_response(session, pep_data['url'])
-            if response_pep is None:
-                status_counter['Ошибка загрузки'] += 1
-                continue
-            pep_soup = BeautifulSoup(response_pep.text, 'lxml')
-            actual_status = get_actual_status(pep_soup)
-            status_counter[actual_status] += 1
-            if actual_status != pep_data['expected_status']:
-                mismatches.append({
-                    'url': pep_data['url'],
-                    'actual': actual_status,
-                    'expected': pep_data['expected_status']
-                })
-        except Exception as e:
-            logging.error(f'Ошибка PEP {pep_data["number"]}: {e}')
-            status_counter['Error'] += 1
+        actual_status, mismatch = process_pep(pep_data, session)
+        status_counter[actual_status] += 1
+        if mismatch:
+            mismatches.append(mismatch)
     print_mismatches(mismatches)
     results = build_status_table(status_counter)
-
     return results
 
 
@@ -153,10 +147,14 @@ def main():
     session = requests_cache.CachedSession()
     if args.clear_cache:
         session.cache.clear()
-    parser_mode = args.mode
-    results = MODE_TO_FUNCTION[parser_mode](session)
-    if results is not None:
-        control_output(results, args)
+    try:
+        parser_mode = args.mode
+        results = MODE_TO_FUNCTION[parser_mode](session)
+        if results is not None:
+            control_output(results, args)
+    except Exception as e:
+        logging.error(f'Ошибка при выполнении парсера: {e}')
+        raise
 
     logging.info('Парсер завершил работу.')
 
