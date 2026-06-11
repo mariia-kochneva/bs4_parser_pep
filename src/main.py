@@ -8,7 +8,7 @@ from tqdm import tqdm
 from collections import Counter
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL, EXPECTED_STATUS
+from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL
 from outputs import control_output
 from utils import get_response, find_tag
 from utils import (

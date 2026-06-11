@@ -53,8 +53,12 @@ def collect_pep_links(soup):
             pep_url = urljoin(PEP_URL, href)
             status_cell = cells[0]
             status_text = status_cell.get_text(strip=True)
-            expected_status_letter = status_text[1:] if len(status_text) > 1 else ''
-            expected_status = EXPECTED_STATUS.get(expected_status_letter, ('Unknown',))[0]
+            expected_status_letter = (
+                status_text[1:] if len(status_text) > 1 else ''
+            )
+            expected_status = EXPECTED_STATUS.get(
+                expected_status_letter, ('Unknown',)
+            )[0]
             pep_links.append({
                 'number': pep_num,
                 'url': pep_url,
