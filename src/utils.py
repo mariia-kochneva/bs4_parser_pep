@@ -1,5 +1,4 @@
 import logging
-import re
 from urllib.parse import urljoin
 
 import requests
@@ -7,7 +6,6 @@ from bs4 import BeautifulSoup
 
 from constants import PEP_URL, EXPECTED_STATUS
 from exceptions import ParserFindTagException
-from requests import RequestException
 
 
 def get_response(session, url, encoding='utf-8'):
@@ -70,7 +68,7 @@ def collect_pep_links(soup):
 
 def get_actual_status(pep_soup):
     status_elem = pep_soup.find(
-        lambda tag: tag.name in ('dt', 'th') and 
+        lambda tag: tag.name in ('dt', 'th') and
         tag.get_text(strip=True).lower().startswith('status')
     )
     if status_elem:
