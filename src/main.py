@@ -45,7 +45,9 @@ def latest_versions(session):
             a_tags = ul.find_all('a')
             break
     if a_tags is None:
-        raise ParserNotFoundVersionException('Не найден список c версиями Python')
+        raise ParserNotFoundVersionException(
+            'Не найден список c версиями Python'
+        )
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
     for a_tag in a_tags:
