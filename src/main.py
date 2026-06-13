@@ -14,7 +14,6 @@ from utils import print_mismatches, build_status_table
 from exceptions import ParserNotFoundVersionException, ParserHTTPError
 
 
-
 def whats_new(session):
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     soup = get_soup(session, whats_new_url)
@@ -46,9 +45,7 @@ def latest_versions(session):
             a_tags = ul.find_all('a')
             break
     if a_tags is None:
-        raise ParserNotFoundVersionException(
-            'Не найден список c версиями Python'
-        )
+        raise ParserNotFoundVersionException('Не найден список c версиями Python')
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
     for a_tag in a_tags:
@@ -83,8 +80,12 @@ def download(session):
 
 
 def process_pep(pep_data, session):
-    pep_soup = get_soup(session, pep_data['url'])
-    actual_status = get_actual_status(pep_soup)
+    try:
+        pep_soup = get_soup(session, pep_data['url'])
+        actual_status = get_actual_status(pep_soup)
+    except ParserHTTPError as e:
+        logging.error(f'Ошибка загрузки PEP {pep_data["number"]}: {e}')
+        return 'Ошибка загрузки', None
     mismatch = None
     if actual_status != pep_data['expected_status']:
         mismatch = {
@@ -92,7 +93,6 @@ def process_pep(pep_data, session):
             'actual': actual_status,
             'expected': pep_data['expected_status']
         }
-    
     return actual_status, mismatch
 
 
@@ -104,14 +104,10 @@ def pep(session):
     status_counter = Counter()
     mismatches = []
     for pep_data in tqdm(pep_links, desc='Обработка PEP'):
-        try:
-            actual_status, mismatch = process_pep(pep_data, session)
-            status_counter[actual_status] += 1
-            if mismatch:
-                mismatches.append(mismatch)
-        except ParserHTTPError as e:
-            logging.error(f'Ошибка загрузки PEP {pep_data["number"]}: {e}')
-            status_counter['Ошибка загрузки'] += 1
+        actual_status, mismatch = process_pep(pep_data, session)
+        status_counter[actual_status] += 1
+        if mismatch:
+            mismatches.append(mismatch)
     print_mismatches(mismatches)
     results = build_status_table(status_counter)
     return results
@@ -144,7 +140,6 @@ def main():
     except Exception as e:
         logging.error(f'Ошибка при выполнении парсера: {e}')
         raise
-
     logging.info('Парсер завершил работу.')
 
 
