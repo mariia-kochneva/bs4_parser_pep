@@ -1,11 +1,9 @@
-import logging
 from urllib.parse import urljoin
 
-import requests
 from bs4 import BeautifulSoup
 
 from constants import PEP_URL, EXPECTED_STATUS
-from exceptions import ParserFindTagException, ParserHTTPError
+from exceptions import ParserFindTagException
 
 
 def get_response(session, url, encoding='utf-8'):
