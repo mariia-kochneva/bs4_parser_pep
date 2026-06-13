@@ -9,7 +9,7 @@ from constants import (
 )
 
 
-def pretty_output(results):
+def pretty_output(results, cli_args=None):
     table = PrettyTable()
     table.field_names = results[0]
     table.align = 'l'
@@ -31,16 +31,20 @@ def file_output(results, cli_args):
     logging.info(f'Файл с результатами был сохранён: {file_path}')
 
 
-def default_output(results):
+def default_output(results, cli_args=None):
     for row in results:
         print(*row)
 
 
+OUTPUT_MODES = {
+    PRETTY_OUTPUT: pretty_output,
+    FILE_OUTPUT: file_output,
+}
+
+
 def control_output(results, cli_args):
     output = cli_args.output
-    if output == PRETTY_OUTPUT:
-        pretty_output(results)
-    elif output == FILE_OUTPUT:
-        file_output(results, cli_args)
+    if output in OUTPUT_MODES:
+        OUTPUT_MODES[output](results, cli_args)
     else:
-        default_output(results)
+        default_output(results, cli_args)

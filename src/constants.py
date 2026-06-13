@@ -6,12 +6,12 @@ BASE_DIR = Path(__file__).parent
 
 # Форматы даты и времени
 FILE_DATETIME_FORMAT = '%Y-%m-%d_%H-%M-%S'
-LOG_DATE_FORMAT = '%d.%m.%Y %H:%M:%S'
 
 # Настройки логирования
 LOG_FORMAT = '"%(asctime)s - [%(levelname)s] - %(message)s"'
 LOG_DIR = 'logs'
 LOG_FILE = 'parser.log'
+LOG_DATE_FORMAT = '%d.%m.%Y %H:%M:%S'
 
 # Режимы вывода
 PRETTY_OUTPUT = 'pretty'

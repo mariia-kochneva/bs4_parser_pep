@@ -9,29 +9,21 @@ from exceptions import ParserFindTagException, ParserHTTPError
 
 
 def get_response(session, url, encoding='utf-8'):
-    try:
-        response = session.get(url)
-        response.encoding = encoding
-        response.raise_for_status()
-        return response
-    except requests.RequestException as e:
-        logging.error(f'Возникла ошибка при загрузке страницы {url}: {e}')
-        return None
+    response = session.get(url)
+    response.encoding = encoding
+    response.raise_for_status()
+    return response
 
 
 def get_soup(session, url, encoding='utf-8'):
     response = get_response(session, url, encoding)
-    if response is None:
-        raise ParserHTTPError(f'Ошибка загрузки {url}')
     return BeautifulSoup(response.text, 'lxml')
 
 
 def find_tag(soup, tag, attrs=None):
     searched_tag = soup.find(tag, attrs=(attrs or {}))
     if searched_tag is None:
-        error_msg = f'Не найден тег {tag} {attrs}'
-        logging.error(error_msg)
-        raise ParserFindTagException(error_msg)
+        raise ParserFindTagException(f'Не найден тег {tag} {attrs}')
     return searched_tag
 
 
