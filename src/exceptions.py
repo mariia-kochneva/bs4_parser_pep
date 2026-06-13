@@ -6,3 +6,8 @@ class ParserFindTagException(Exception):
 class ParserNotFoundVersionException(Exception):
     """Вызывается, когда не найден список версий Python."""
     pass
+
+
+class ParserHTTPError(Exception):
+    """Вызывается при ошибке HTTP запроса."""
+    pass

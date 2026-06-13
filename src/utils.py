@@ -5,24 +5,16 @@ import requests
 from bs4 import BeautifulSoup
 
 from constants import PEP_URL, EXPECTED_STATUS
-from exceptions import ParserFindTagException
+from exceptions import ParserFindTagException, ParserHTTPError
 
 
-def get_response(session, url, encoding='utf-8'):
+def get_soup(session, url, encoding='utf-8'):
     try:
         response = session.get(url)
         response.encoding = encoding
         response.raise_for_status()
-        return response
     except requests.RequestException as e:
-        logging.error(f'Возникла ошибка при загрузке страницы {url}: {e}')
-        return None
-
-
-def get_soup(session, url, encoding='utf-8'):
-    response = get_response(session, url, encoding)
-    if response is None:
-        return None
+        raise ParserHTTPError(f'Ошибка загрузки {url}: {e}')
     return BeautifulSoup(response.text, 'lxml')
 
 
@@ -38,26 +30,16 @@ def find_tag(soup, tag, attrs=None):
 def collect_pep_links(soup):
     pep_links = []
     seen_numbers = set()
-    rows = soup.select('table.pep-zero-table tr')
-    for row in rows:
-        cells = row.find_all('td')
-        if len(cells) < 2:
-            continue
-        link = cells[1].find('a')
-        if not link:
-            continue
+    for link in soup.select('table.pep-zero-table td:nth-child(2) a'):
         pep_num = link.get_text(strip=True)
         if not pep_num.isdigit() or pep_num == '0' or pep_num in seen_numbers:
             continue
         seen_numbers.add(pep_num)
-        pep_url = urljoin(PEP_URL, link.get('href'))
-        status_text = cells[0].get_text(strip=True)
-        expected_status_letter = (
-            status_text[1:] if len(status_text) > 1 else ''
-        )
-        expected_status = EXPECTED_STATUS.get(
-            expected_status_letter, ('Unknown',)
-        )[0]
+        pep_url = urljoin(PEP_URL, link['href'])
+        status_cell = link.find_parent('td').find_previous_sibling('td')
+        status_text = status_cell.get_text(strip=True) if status_cell else ''
+        status_letter = status_text[1] if len(status_text) > 1 else ''
+        expected_status = EXPECTED_STATUS.get(status_letter, ('Unknown',))[0]
         pep_links.append({
             'number': pep_num,
             'url': pep_url,
@@ -67,14 +49,12 @@ def collect_pep_links(soup):
 
 
 def get_actual_status(pep_soup):
-    status_elem = pep_soup.find(
-        lambda tag: tag.name in ('dt', 'th') and
-        tag.get_text(strip=True).lower().startswith('status')
-    )
-    if status_elem:
-        next_elem = status_elem.find_next_sibling(['dd', 'td'])
-        if next_elem:
-            return next_elem.get_text(strip=True)
+    for tag in pep_soup.find_all(['dt', 'th']):
+        text = tag.get_text(strip=True).lower()
+        if 'status' in text:
+            next_elem = tag.find_next_sibling(['dd', 'td'])
+            if next_elem:
+                return next_elem.get_text(strip=True)
     return 'Unknown'
 
 

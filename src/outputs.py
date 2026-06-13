@@ -4,21 +4,12 @@ import logging
 
 from prettytable import PrettyTable
 
-from constants import BASE_DIR, DATETIME_FORMAT
+from constants import (
+    BASE_DIR, FILE_DATETIME_FORMAT, PRETTY_OUTPUT, FILE_OUTPUT, RESULTS_DIR
+)
 
 
-OUTPUT_FUNCTIONS = {}
-
-
-def register_output(name):
-    def decorator(func):
-        OUTPUT_FUNCTIONS[name] = func
-        return func
-    return decorator
-
-
-@register_output('pretty')
-def pretty_output(results, cli_args=None):
+def pretty_output(results):
     table = PrettyTable()
     table.field_names = results[0]
     table.align = 'l'
@@ -26,13 +17,12 @@ def pretty_output(results, cli_args=None):
     print(table)
 
 
-@register_output('file')
 def file_output(results, cli_args):
-    results_dir = BASE_DIR / 'results'
+    results_dir = BASE_DIR / RESULTS_DIR
     results_dir.mkdir(exist_ok=True)
     parser_mode = cli_args.mode
     now = dt.datetime.now()
-    now_formatted = now.strftime(DATETIME_FORMAT)
+    now_formatted = now.strftime(FILE_DATETIME_FORMAT)
     file_name = f'{parser_mode}_{now_formatted}.csv'
     file_path = results_dir / file_name
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -48,7 +38,9 @@ def default_output(results):
 
 def control_output(results, cli_args):
     output = cli_args.output
-    if output in OUTPUT_FUNCTIONS:
-        OUTPUT_FUNCTIONS[output](results, cli_args)
+    if output == PRETTY_OUTPUT:
+        pretty_output(results)
+    elif output == FILE_OUTPUT:
+        file_output(results, cli_args)
     else:
         default_output(results)

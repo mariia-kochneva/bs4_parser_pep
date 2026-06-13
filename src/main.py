@@ -7,45 +7,37 @@ from tqdm import tqdm
 from collections import Counter
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL
+from constants import BASE_DIR, MAIN_DOC_URL, PEP_URL, DOWNLOADS_DIR
 from outputs import control_output
 from utils import get_soup, find_tag, collect_pep_links, get_actual_status
 from utils import print_mismatches, build_status_table
-from exceptions import ParserNotFoundVersionException
+from exceptions import ParserNotFoundVersionException, ParserHTTPError
+
 
 
 def whats_new(session):
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     soup = get_soup(session, whats_new_url)
-    if soup is None:
-        return
     main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
     div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
     sections_by_python = div_with_ul.find_all(
         'li', attrs={'class': 'toctree-l1'}
     )
-
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, автор')]
     for section in tqdm(sections_by_python):
         version_a_tag = section.find('a')
         version_link = urljoin(whats_new_url, version_a_tag['href'])
         soup = get_soup(session, version_link)
-        if soup is None:
-            continue
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         dl_text = dl.text.replace('\n', ' ')
-        results.append(
-            (version_link, h1.text, dl_text)
-        )
+        results.append((version_link, h1.text, dl_text))
 
     return results
 
 
 def latest_versions(session):
     soup = get_soup(session, MAIN_DOC_URL)
-    if soup is None:
-        return
     sidebar = soup.find('div', {'class': 'sphinxsidebarwrapper'})
     ul_tags = sidebar.find_all('ul')
     a_tags = None
@@ -74,27 +66,24 @@ def latest_versions(session):
 def download(session):
     downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
     soup = get_soup(session, downloads_url)
-    if soup is None:
-        return
     main_tag = soup.find('div', {'role': 'main'})
     table_tag = main_tag.find('table', {'class': 'docutils'})
     html_a4_tag = table_tag.find('a', {'href': re.compile(r'.+html.*\.zip$')})
     html_a4_link = html_a4_tag['href']
     archive_url = urljoin(downloads_url, html_a4_link)
     filename = archive_url.split('/')[-1]
-    downloads_dir = BASE_DIR / 'downloads'
+    downloads_dir = BASE_DIR / DOWNLOADS_DIR
     downloads_dir.mkdir(exist_ok=True)
     archive_path = downloads_dir / filename
     response = session.get(archive_url)
     with open(archive_path, 'wb') as file:
         file.write(response.content)
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
+    return None
 
 
 def process_pep(pep_data, session):
     pep_soup = get_soup(session, pep_data['url'])
-    if pep_soup is None:
-        return 'Ошибка загрузки', None
     actual_status = get_actual_status(pep_soup)
     mismatch = None
     if actual_status != pep_data['expected_status']:
@@ -103,26 +92,26 @@ def process_pep(pep_data, session):
             'actual': actual_status,
             'expected': pep_data['expected_status']
         }
+    
     return actual_status, mismatch
 
 
 def pep(session):
     logging.info('Начинаем парсинг PEP')
     soup = get_soup(session, PEP_URL)
-    if soup is None:
-        return
     pep_links = collect_pep_links(soup)
     logging.info(f'Найдено {len(pep_links)} PEP для обработки')
-    if not pep_links:
-        logging.error('Не найдено ни одного PEP')
-        return
     status_counter = Counter()
     mismatches = []
     for pep_data in tqdm(pep_links, desc='Обработка PEP'):
-        actual_status, mismatch = process_pep(pep_data, session)
-        status_counter[actual_status] += 1
-        if mismatch:
-            mismatches.append(mismatch)
+        try:
+            actual_status, mismatch = process_pep(pep_data, session)
+            status_counter[actual_status] += 1
+            if mismatch:
+                mismatches.append(mismatch)
+        except ParserHTTPError as e:
+            logging.error(f'Ошибка загрузки PEP {pep_data["number"]}: {e}')
+            status_counter['Ошибка загрузки'] += 1
     print_mismatches(mismatches)
     results = build_status_table(status_counter)
     return results

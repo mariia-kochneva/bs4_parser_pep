@@ -3,8 +3,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from constants import (
-    BASE_DIR, LOG_DIR, LOG_FILE, LOG_FORMAT, DT_FORMAT, OUTPUT_FORMATS
+    BASE_DIR, LOG_DIR, LOG_FILE, LOG_FORMAT, LOG_DATE_FORMAT,
+    PRETTY_OUTPUT, FILE_OUTPUT
 )
+
+
+OUTPUT_CHOICES = (PRETTY_OUTPUT, FILE_OUTPUT)
 
 
 def configure_argument_parser(available_modes):
@@ -23,7 +27,7 @@ def configure_argument_parser(available_modes):
     parser.add_argument(
         '-o',
         '--output',
-        choices=OUTPUT_FORMATS,
+        choices=OUTPUT_CHOICES,
         help='Дополнительные способы вывода данных'
     )
     return parser
@@ -37,7 +41,7 @@ def configure_logging():
         log_file, maxBytes=10 ** 6, backupCount=5
     )
     logging.basicConfig(
-        datefmt=DT_FORMAT,
+        datefmt=LOG_DATE_FORMAT,
         format=LOG_FORMAT,
         level=logging.INFO,
         handlers=(rotating_handler, logging.StreamHandler())
